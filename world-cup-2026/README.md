@@ -16,7 +16,7 @@ Scores accumulate across all matches in the tournament.
 
 ### Adding Players
 
-Edit `data/players.csv` to add or modify players. Each row has a name and comma-separated team codes. Use `data/players_template.csv` as a reference.
+Create a CSV file in the `groups/` folder (e.g. `groups/work.csv`). Each row has a name and comma-separated team codes. See `etc/players_template.csv` at the repo root for a reference.
 
 Valid team codes and pot assignments are defined in `data/teams.csv`.
 
@@ -26,24 +26,29 @@ Match results are tracked in `data/matches.csv`. Each row has a datetime, home/a
 
 ## Running the Script
 
+From the repo root:
+
 ```
-node update.js YYYY-MM-DD
+node update.js world-cup-2026 work 2026-06-11
 ```
 
-This processes all matches on the given date and outputs a summary showing:
+Arguments:
+1. **Tournament folder** — the directory containing `data/` and `groups/`
+2. **Group name** — the name of the player group CSV (without `.csv`) in the tournament's `groups/` folder
+3. **Date** — `YYYY-MM-DD` to process
+
+This outputs a summary showing:
 
 1. Match results (with group standing medals on final group matchdays, or win/loss indicators in knockout rounds)
 2. Each player's updated score, broken down as: `new_total = previous_total +/-per_team`
 
 Players are sorted by score (descending).
 
-Output is printed to the console and saved to `updates/YYYY-MM-DD.txt`. Create the `updates/` directory before running for the first time.
-
 ## Data Files
 
-| File                        | Description                                                              |
-| --------------------------- | ------------------------------------------------------------------------ |
-| `data/teams.csv`            | Teams in the tournament with FIFA rank, group, pot, flag emoji, and code |
-| `data/players.csv`          | Player picks                                                             |
-| `data/players_template.csv` | Template for adding a new players                                        |
-| `data/matches.csv`          | Full match schedule and results                                          |
+| File                         | Description                                                              |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `data/teams.csv`             | Teams in the tournament with FIFA rank, group, pot, flag emoji, and code |
+| `data/matches.csv`           | Full match schedule and results                                          |
+| `groups/*.csv`               | Player group files with picks                                            |
+| `etc/players_template.csv`   | Template for adding new players (repo root)                              |
