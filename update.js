@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 
 const tournament = process.argv[2];
-const group = process.argv[3];
-const date = process.argv[4];
-if (!tournament || !group || !date) {
-  console.error('Usage: node update.js <tournament> <group> <YYYY-MM-DD>');
+const date = process.argv[3];
+const group = process.argv[4];
+if (!tournament || !date || !group) {
+  console.error('Usage: node update.js <tournament> <YYYY-MM-DD> <group>');
   process.exit(1);
 }
 
@@ -100,19 +100,22 @@ function computeDelta(picks, matches) {
   return entries;
 }
 
+function fmtScore(n) {
+  return n < 0 ? `−${-n}` : `${n}`;
+}
+
 function fmtDelta(delta) {
   if (delta > 0) return `+${delta}`;
-  if (delta < 0) return `${delta}`;
+  if (delta < 0) return `−${-delta}`;
   return '+0';
 }
 
-function groupStandings(groupCode, matches) {
-  const teams = groups[groupCode];
+function computeStats(teamList, matches) {
   const stats = {};
-  teams.forEach(t => { stats[t] = { pts: 0, gd: 0, gf: 0 }; });
+  teamList.forEach(t => { stats[t] = { pts: 0, gd: 0, gf: 0 }; });
   for (const m of matches) {
     const h = m['Home Team'], a = m['Away Team'];
-    if (!teams.includes(h) || !teams.includes(a)) continue;
+    if (!teamList.includes(h) || !teamList.includes(a)) continue;
     const hs = parseInt(m['Home Score']), as = parseInt(m['Away Score']);
     stats[h].gf += hs; stats[h].gd += hs - as;
     stats[a].gf += as; stats[a].gd += as - hs;
@@ -120,8 +123,79 @@ function groupStandings(groupCode, matches) {
     else if (hs < as) { stats[a].pts += 3; }
     else              { stats[h].pts += 1; stats[a].pts += 1; }
   }
-  return teams.map(t => ({ code: t, ...stats[t] }))
-    .sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
+  return stats;
+}
+
+function fifaTiebreak(tiedTeams, matches) {
+  if (tiedTeams.length <= 1) return tiedTeams;
+
+  // Step 1: head-to-head among tied teams only
+  const h2h = computeStats(tiedTeams, matches);
+  const byH2H = [...tiedTeams].sort((a, b) =>
+    h2h[b].pts - h2h[a].pts || h2h[b].gd - h2h[a].gd || h2h[b].gf - h2h[a].gf
+  );
+
+  // Group into sub-clusters still tied after head-to-head
+  const result = [];
+  let cluster = [byH2H[0]];
+  for (let i = 1; i < byH2H.length; i++) {
+    const prev = h2h[byH2H[i - 1]], cur = h2h[byH2H[i]];
+    if (prev.pts === cur.pts && prev.gd === cur.gd && prev.gf === cur.gf) {
+      cluster.push(byH2H[i]);
+    } else {
+      result.push(...cluster);
+      cluster = [byH2H[i]];
+    }
+  }
+  result.push(...cluster);
+  return result;
+}
+
+function groupStandings(groupCode, matches) {
+  const teams = groups[groupCode];
+  const stats = computeStats(teams, matches);
+
+  // Sort by overall points first
+  const sorted = [...teams].sort((a, b) => stats[b].pts - stats[a].pts);
+
+  // Identify clusters tied on points, apply FIFA tiebreak to each
+  const result = [];
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    while (j < sorted.length && stats[sorted[j]].pts === stats[sorted[i]].pts) j++;
+    const tiedCluster = sorted.slice(i, j);
+    if (tiedCluster.length === 1) {
+      result.push(tiedCluster[0]);
+    } else {
+      // Step 1: head-to-head
+      const h2hSorted = fifaTiebreak(tiedCluster, matches);
+
+      // Check if step 1 fully resolved it
+      const h2hStats = computeStats(h2hSorted, matches);
+      let k = 0;
+      while (k < h2hSorted.length) {
+        let l = k + 1;
+        while (l < h2hSorted.length) {
+          const a = h2hStats[h2hSorted[l - 1]], b = h2hStats[h2hSorted[l]];
+          if (a.pts === b.pts && a.gd === b.gd && a.gf === b.gf) l++;
+          else break;
+        }
+        const subCluster = h2hSorted.slice(k, l);
+        if (subCluster.length === 1) {
+          result.push(subCluster[0]);
+        } else {
+          // Step 2: overall GD, then overall GF
+          subCluster.sort((a, b) => stats[b].gd - stats[a].gd || stats[b].gf - stats[a].gf);
+          result.push(...subCluster);
+        }
+        k = l;
+      }
+    }
+    i = j;
+  }
+
+  return result.map(code => ({ code, ...stats[code] }));
 }
 
 function groupMedals(groupCode) {
@@ -201,7 +275,7 @@ if (todayMatches.length === 0) {
       const medals = matchMedals[grp];
       if (medals) { homePrefix = `${medals[home]} `; awaySuffix = ` ${medals[away]}`; }
     }
-    lines.push(`${homePrefix}${home} ${homeFlag} ${m['Home Score']}- ${m['Away Score']} ${awayFlag} ${away}${awaySuffix}`);
+    lines.push(`${homePrefix}${home} ${homeFlag} ${m['Home Score']} - ${m['Away Score']} ${awayFlag} ${away}${awaySuffix}`);
   }
 
   lines.push('');
@@ -218,14 +292,17 @@ if (todayMatches.length === 0) {
 
   for (const { player, prevScore, deltas, newScore } of playerRows) {
     if (deltas.length === 0) {
-      lines.push(`${player.name}: ${newScore} = ${newScore}`);
+      lines.push(`${player.name}: ${fmtScore(newScore)} = ${fmtScore(newScore)}`);
     } else {
       const deltaParts = deltas.map(e => `${fmtDelta(e.delta)}${teamByCode[e.code]?.flag ?? e.code}`);
-      lines.push(`${player.name}: ${newScore} = ${prevScore} ${deltaParts.join(' ')}`);
+      lines.push(`${player.name}: ${fmtScore(newScore)} = ${fmtScore(prevScore)} ${deltaParts.join(' ')}`);
     }
   }
 }
 
 lines.push('');
 
-console.log(lines.join('\n'));
+const output = lines.join('\n');
+console.log(output);
+
+require('child_process').execSync('pbcopy', { input: output });
