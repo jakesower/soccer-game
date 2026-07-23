@@ -230,14 +230,19 @@ function groupMedals(groupCode) {
 const GROUP_STAGE_END = '2026-06-27';
 
 function knockoutEmojis(m) {
+  const home = m['Home Team'], away = m['Away Team'];
   const hs = parseInt(m['Home Score']), as = parseInt(m['Away Score']);
-  if (hs === as) {
-    console.error(`Warning: ambiguous result in knockout match ${m['Home Team']} vs ${m['Away Team']} ✅❌`);
-    return null;
-  }
-  return hs > as
-    ? { home: '✅', away: '❌' }
-    : { home: '❌', away: '✅' };
+  const winner = m['Winner']?.trim();
+  const round = m['Round']?.trim();
+  let winEmoji = '✅', loseEmoji = '❌';
+  if (round === 'Third') { winEmoji = '🥉'; }
+  else if (round === 'Final') { winEmoji = '🥇'; loseEmoji = '🥈'; }
+  if (hs > as) return { home: winEmoji, away: loseEmoji };
+  if (hs < as) return { home: loseEmoji, away: winEmoji };
+  if (winner === home) return { home: winEmoji, away: loseEmoji };
+  if (winner === away) return { home: loseEmoji, away: winEmoji };
+  console.error(`Warning: ambiguous result in knockout match ${home} vs ${away} — set Winner column ✅❌`);
+  return null;
 }
 
 const matchMedals = {};
